@@ -33,6 +33,13 @@ resource "aws_security_group" "app" {
 resource "aws_key_pair" "deployer" {
   key_name   = "cloud-pipeline-key"                        # FIX: create key pair so SSH can authenticate
   public_key = var.ec2_public_key
+
+  lifecycle {
+    ignore_changes = [public_key]                          # FIX: prevents InvalidKeyPair.Duplicate error —
+                                                           # when terraform has no state but key pair already
+                                                           # exists in AWS from a previous failed run,
+                                                           # ignore_changes tells terraform not to recreate it
+  }
 }
 
 resource "aws_instance" "app" {
