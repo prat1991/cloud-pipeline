@@ -18,7 +18,10 @@ jobs:
           terraform_wrapper: false # FIX: needed so output commands work cleanly
 
       - name: Terraform init & apply
-        run: terraform init && terraform apply -auto-approve
+        run: |
+             terraform init
+             terraform destroy -auto-approve || true   # wipe whatever exists
+             terraform apply -auto-approve
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

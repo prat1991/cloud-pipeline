@@ -5,6 +5,7 @@ provider "aws" {
 
 resource "aws_ecr_repository" "app" {
   name = "cloud-pipeline-app"
+  force_delete = true        # allows clean destroy + recreate
 }
 
 resource "aws_instance" "app" {
