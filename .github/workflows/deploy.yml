@@ -70,17 +70,23 @@ jobs:
       - name: SSH into EC2 & run container
         run: |
           echo "EC2_IP=$EC2_IP" # FIX: now reads from $GITHUB_ENV set above, not re-queried here
-          ssh -i ~/.ssh/cloud-pipeline \            # FIX: specify private key — without -i SSH has no key to present to EC2
+          ssh -i ~/.ssh/cloud-pipeline \
               -o StrictHostKeyChecking=no \
-              ec2-user@$EC2_IP "
-            sudo yum install -y docker && sudo service docker start
+              ec2-user@$EC2_IP bash << ENDSSH
+            sudo yum install -y docker
+            sudo service docker start
             aws ecr get-login-password --region us-east-1 | \
-              sudo docker login --username AWS --password-stdin $ECR_URI
-            sudo docker pull $ECR_URI:latest
+              sudo docker login --username AWS --password-stdin ${ECR_URI}
+            sudo docker pull ${ECR_URI}:latest
             sudo docker rm -f app 2>/dev/null || true
-            sudo docker run -d --name app -p 80:5000 $ECR_URI:latest
+            sudo docker run -d --name app -p 80:5000 ${ECR_URI}:latest
             echo 'SUCCESS! Web server validation complete.'
-          "
+ENDSSH
+        # FIX: replaced double-quoted " " ssh command with heredoc << ENDSSH —
+        # double quotes caused newlines and backslashes to be misinterpreted,
+        # producing "hostname contains invalid characters" error.
+        # heredoc without single quotes expands ${ECR_URI} on the runner before
+        # sending the script to EC2, so EC2 receives the actual URI value.
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
