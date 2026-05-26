@@ -10,18 +10,38 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # FIX: v3 deprecated, updated to v4 for Node.js 24 support
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3 # FIX: v2 deprecated, updated to v3 for Node.js 24 support
         with:
           terraform_wrapper: false # FIX: needed so output commands work cleanly
 
-      - name: Terraform init & apply
+      - name: Terraform init
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1 # FIX: Error 3 — region was missing
+
+      - name: Terraform destroy
+        run: terraform destroy -auto-approve || true # wipe whatever exists
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1 # FIX: Error 3 — region was missing
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1 # FIX: Error 3 — region was missing
+
+      - name: Read Terraform outputs # FIX: split into own step so apply fully completes before outputs are read
         run: |
-             terraform init
-             terraform destroy -auto-approve || true   # wipe whatever exists
-             terraform apply -auto-approve
+          echo "ECR_URI=$(terraform output -json ecr_uri | tr -d '"')" >> $GITHUB_ENV       # FIX: $GITHUB_ENV persists vars into all subsequent steps
+          echo "EC2_IP=$(terraform output -json ec2_public_ip | tr -d '"')" >> $GITHUB_ENV  # FIX: previously re-read outputs inside each step which raced against apply
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -29,21 +49,19 @@ jobs:
 
       - name: Build & push Docker image to ECR
         run: |
-          ECR_URI=$(terraform output -json ecr_uri | tr -d '"') 
-          echo "ECR_URI=$ECR_URI"
+          echo "ECR_URI=$ECR_URI" # FIX: now reads from $GITHUB_ENV set above, not re-queried here
           aws ecr get-login-password --region us-east-1 | \
             docker login --username AWS --password-stdin $ECR_URI
           docker build -t $ECR_URI:latest .
-          docker push $ECR_URI:latest 
+          docker push $ECR_URI:latest
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1  # FIX: Error 3 — region was missing
+          AWS_DEFAULT_REGION: us-east-1 # FIX: Error 3 — region was missing
 
       - name: SSH into EC2 & run container
         run: |
-          EC2_IP=$(terraform output -json ec2_public_ip | tr -d '"')
-          ECR_URI=$(terraform output -json ecr_uri | tr -d '"')
+          echo "EC2_IP=$EC2_IP" # FIX: now reads from $GITHUB_ENV set above, not re-queried here
           ssh -o StrictHostKeyChecking=no ec2-user@$EC2_IP "
             sudo yum install -y docker && sudo service docker start
             aws ecr get-login-password --region us-east-1 | \
@@ -57,4 +75,3 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1 # FIX: Error 3 — region was missing
-          
