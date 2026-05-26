@@ -74,8 +74,14 @@ jobs:
           echo "EC2_IP=$EC2_IP" # FIX: now reads from $GITHUB_ENV set above, not re-queried here
           cat > /tmp/remote.sh << EOF
           #!/bin/bash
+          set -e                                                              # FIX: stop script on any error so SUCCESS only prints if everything worked
+          sudo killall yum 2>/dev/null || true                               # FIX: kill AWS boot-time yum process that holds the lock and blocks docker install
+          sudo rm -f /var/run/yum.pid                                        # FIX: remove stale yum lock file so next yum install runs immediately
           sudo yum install -y docker
           sudo service docker start
+          aws configure set aws_access_key_id ${AWS_ACCESS_KEY_ID}          # FIX: inject AWS creds into EC2 — runner env vars do not transfer over SSH
+          aws configure set aws_secret_access_key ${AWS_SECRET_ACCESS_KEY}  # FIX: EC2 needs its own credentials to authenticate to ECR
+          aws configure set default.region us-east-1
           aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin ${ECR_URI}
           sudo docker pull ${ECR_URI}:latest
           sudo docker rm -f app 2>/dev/null || true
@@ -87,7 +93,8 @@ jobs:
         # FIX: replaced heredoc with script file approach — heredoc inside YAML run block
         # caused syntax errors due to backslash continuations and indentation conflicts.
         # script is written locally, copied to EC2 via scp, then executed via ssh.
-        # ${ECR_URI} is expanded locally before scp so EC2 receives the actual URI value.
+        # ${ECR_URI} and ${AWS_ACCESS_KEY_ID} expand locally on runner before scp
+        # so EC2 receives actual values — runner env vars do not transfer over SSH.
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
